@@ -17,4 +17,8 @@ check(dispatch("doctor",opts(["--state",root]))["value"]["healthy"],"doctor")
 check(dispatch("version",opts([]))["value"]["version"]=="0.1.0","version")
 check(dispatch("export",opts(["--state",root]))["value"]["schema_version"]=="1.0.0","export")
 if id!=""{check(dispatch("show",opts(["--state",root,"--id",id]))["ok"],"show")}
+artifact:=root+"/package.bin";write_file(artifact,"approved",true)
+bound:=dispatch("approve",opts(["--state",root,"--input","fixtures/core.json","--actor","fixture-human","--timestamp","2026-08-14T00:00:01Z","--path",artifact]))
+check(bound["ok"],"approval binds package bytes")
+if bound["ok"]{bound_id:=bound["value"]["id"];check(dispatch("verify",opts(["--state",root,"--id",bound_id,"--path",artifact]))["ok"],"unchanged package verifies");append_file(artifact,"x");check(!dispatch("verify",opts(["--state",root,"--id",bound_id,"--path",artifact]))["ok"],"one-byte drift invalidates approval")}
 print(to_string(pass)+" passed; "+to_string(fail)+" failed");if fail>0{exit(1)}
