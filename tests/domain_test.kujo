@@ -1,5 +1,5 @@
 from src.domain import validate_command
 mut pass:=0;mut fail:=0;func check(ok,label){if ok{pass=pass+1}else{fail=fail+1;eprint("FAIL: "+label)}}
-p:={"human_actor":"a","package_id":"p","package_version":"1","manifest_checksum":"abc","destination":"d","action":"publish"}
-check(validate_command("approve",p,null)!="","manifest required");check(validate_command("approve",p,{"sha256":"wrong"})!="","checksum exact");check(validate_command("approve",p,{"sha256":"abc"})=="","valid exact approval")
+p:={"human_actor":"approver","package_id":"package-fixture","package_version":"1","manifest_checksum":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","destination":"fixture-local","action":"publish"}
+check(validate_command("approve",p,null)!="","manifest required");check(validate_command("approve",p,{"sha256":"wrong"})!="","checksum exact");check(validate_command("approve",p,{"sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"})=="","valid exact approval")
 print(to_string(pass)+" passed; "+to_string(fail)+" failed");if fail>0{exit(1)}

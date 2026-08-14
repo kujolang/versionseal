@@ -1,10 +1,12 @@
-from src.common import get, has
+from src.common import get, has, safe_id, valid_timestamp
 export func record_type(command){if has(["approve","reject","request-changes"],command){return "decision"};return command}
 export func id_prefix(command){if command=="request-changes"{return "changes"};return command}
-func required(payload,fields){for field in fields{if type(get(payload,field,null))=="null"||get(payload,field,"")==""{return field+" is required"}};return ""}
+func required(payload,fields){for field in fields{value:=get(payload,field,"");if type(value)!="string"||trim(value)==""{return field+" must be non-empty text"};if len(value)>16384{return field+" exceeds 16 KiB"}};return ""}
+func choices(value){if type(value)!="array"||len(value)==0||len(value)>100{return false};for item in value{if type(item)!="string"||trim(item)==""||len(item)>512{return false}};return true}
+func checksum(value){return type(value)=="string"&&regex_match(lower(value),"^[a-f0-9]{64}$")}
 export func validate_command(command,payload,artifact){
-if command=="request"{return required(payload,["package_id","package_version","manifest_checksum","destinations","actions","requested_by","expires_at"])}
-if command=="approve"{e:=required(payload,["human_actor","package_id","package_version","manifest_checksum","destination","action"]);if e!=""{return e};if type(artifact)!="dict"{return "approve requires --path to the exact manifest"};if artifact["sha256"]!=payload["manifest_checksum"]{return "manifest checksum does not match exact bytes"};return ""}
+if command=="request"{e:=required(payload,["package_id","package_version","manifest_checksum","requested_by","expires_at"]);if e!=""{return e};if !safe_id(payload["package_id"]){return "package_id must be a safe record id"};if !checksum(payload["manifest_checksum"]){return "manifest_checksum must be SHA-256 hex"};if !choices(get(payload,"destinations",null))||!choices(get(payload,"actions",null)){return "destinations and actions must contain 1..100 bounded values"};if !valid_timestamp(payload["expires_at"]){return "expires_at must be RFC 3339 UTC"};return ""}
+if command=="approve"{e:=required(payload,["human_actor","package_id","package_version","manifest_checksum","destination","action"]);if e!=""{return e};if !safe_id(payload["package_id"]){return "package_id must be a safe record id"};if !checksum(payload["manifest_checksum"]){return "manifest_checksum must be SHA-256 hex"};if type(artifact)!="dict"{return "approve requires --path to the exact manifest"};if artifact["sha256"]!=payload["manifest_checksum"]{return "manifest checksum does not match exact bytes"};return ""}
 if has(["reject","request-changes"],command){return required(payload,["human_actor","package_id","package_version","reason"])}
-if has(["revoke","expire"],command){return required(payload,["human_actor","approval_id","reason"])}
+if has(["revoke","expire"],command){e:=required(payload,["human_actor","approval_id","reason"]);if e!=""{return e};if !safe_id(payload["approval_id"]){return "approval_id must be a safe record id"};return ""}
 return ""}
