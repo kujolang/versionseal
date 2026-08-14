@@ -1,7 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 - 2026-08-14
 
+- Preserved validation compatibility with immutable 0.1.0 records while emitting 0.2.0 records.
+- Prevented audit-history conflicts from leaving partial records and added clean-retry regression coverage.
 - Enforced safe package/approval references, SHA-256 checksum syntax, bounded action/destination sets, expiry timestamps, state compatibility, and stricter immutable-record validation.
 - Added exact manifest-byte binding, actor binding, immutable audit storage, structured failures, CI, and expanded verification.
 

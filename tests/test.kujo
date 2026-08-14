@@ -15,9 +15,10 @@ bad:=root+"/bad.json";write_file(bad,"{",true);check(!dispatch("approve",opts(["
 future:=root+"/future.json";write_file(future,"{\"schema_version\":\"2.0.0\"}",true);check(!dispatch("approve",opts(["--state",root,"--input",future,"--actor","fixture-human"]))["ok"],"schema major")
 check(dispatch("approve",opts(["--state",root,"--input",input,"--path",manifest,"--actor","fixture-human","--dry-run"]))["value"]["dry_run"],"dry run")
 check(dispatch("doctor",opts(["--state",root]))["value"]["healthy"],"doctor")
-check(dispatch("version",opts([]))["value"]["version"]=="0.1.0","version")
+check(dispatch("version",opts([]))["value"]["version"]=="0.2.0","version")
 check(dispatch("export",opts(["--state",root]))["value"]["schema_version"]=="1.0.0","export")
 if id!=""{check(dispatch("show",opts(["--state",root,"--id",id]))["ok"],"show")}
+if id!=""{record_path:=root+"/records/"+id+".json";legacy:=parse_json(read_file(record_path));legacy["tool_version"]="0.1.0";write_file(record_path,to_json_pretty(legacy)+"\n",true);check(dispatch("validate",opts(["--state",root,"--id",id]))["ok"],"0.1.0 record compatibility")}
 artifact:=root+"/package.bin";write_file(artifact,"approved",true);bound_input:=root+"/bound.json";write_file(bound_input,"{\"schema_version\":\"1.0.0\",\"human_actor\":\"fixture-human\",\"package_id\":\"package-2\",\"package_version\":\"2\",\"manifest_checksum\":\""+sha256_file(artifact)+"\",\"destination\":\"local\",\"action\":\"publish\"}",true)
 bound:=dispatch("approve",opts(["--state",root,"--input",bound_input,"--actor","fixture-human","--timestamp","2026-08-14T00:00:01Z","--path",artifact]))
 check(bound["ok"],"approval binds package bytes")

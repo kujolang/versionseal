@@ -1,12 +1,17 @@
 # Context
 
-- objective: Harden VersionSeal into a production-ready, universally useful Kujo-native production Kujo tool without weakening its authority boundaries.
-- git_head: 782e1d1
+- objective: Clean up, verify, and prepare VersionSeal for the v0.2.0 release without weakening its authority boundaries.
+- git_head: 462cfc1
 - changed_files:
+  - .loop-engineering/loop.yml
   - CHANGELOG.md
-  - src/common.kujo
+  - README.md
+  - SECURITY.md
+  - VERSION
+  - kujo.toml
+  - schemas/record.schema.json
+  - scripts/validate.sh
   - src/core.kujo
-  - src/domain.kujo
+  - src/profile.kujo
   - src/storage.kujo
-  - tests/domain_test.kujo
-  - tests/security_test.kujo
+  - tests/test.kujo
