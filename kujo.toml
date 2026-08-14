@@ -1,0 +1,4 @@
+[package]
+name = "versionseal"
+version = "0.1.0"
+entry = "versionseal.kujo"

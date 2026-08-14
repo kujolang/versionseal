@@ -1,0 +1,3 @@
+.versionseal/
+*.tmp-*
+.env
