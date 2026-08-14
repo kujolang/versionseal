@@ -46,7 +46,7 @@ jobs:
         shell: pwsh
         run: |
           echo "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" >> $env:GITHUB_ENV
-          vcpkg install openssl:x64-windows
+          vcpkg install openssl:x64-windows-static-md
       - run: cargo build --release --manifest-path .runtime/kujo/Cargo.toml
       - shell: bash
         env:
