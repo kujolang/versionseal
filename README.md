@@ -7,11 +7,11 @@
 
 VersionSeal is a local-first Kujo tool for exact-version human approvals, explicit authority, revocation, and checksum-backed verification. It has no required hosted service, database server, model key, or sibling-tool dependency.
 
-## Readiness posture
+## Production capabilities
 
-VersionSeal is ready for serious standalone workflows: immutable records, append-only audit events, atomic writes, per-record locks, bounded inputs and queries, structured errors, deterministic fixtures, strict domain contracts, and explicit authority boundaries. Optional external capabilities fail honestly when no adapter is configured. It does not claim hosted identity or distributed multi-host coordination.
+VersionSeal provides immutable records, append-only audit events, atomic writes, per-record locks, bounded inputs and queries, RSA/HMAC verification adapters, offline public-key fixtures, quorum and separation-of-duties policy evaluation, injected-clock expiry, conflict-aware replication with revocation precedence, and a three-platform contention gate. Optional external capabilities fail honestly when no adapter is configured. It does not claim hosted identity.
 
-See the [production review](docs/PRODUCTION_READINESS_REVIEW.md) and [next-session worklist](docs/NEXT_SESSION.md).
+See the [production review](docs/PRODUCTION_READINESS_REVIEW.md) and completed [hardening worklist](docs/NEXT_SESSION.md).
 
 ## Quick install
 
