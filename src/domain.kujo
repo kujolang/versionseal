@@ -1,0 +1,10 @@
+from src.common import get, has
+export func record_type(command){if has(["approve","reject","request-changes"],command){return "decision"};return command}
+export func id_prefix(command){if command=="request-changes"{return "changes"};return command}
+func required(payload,fields){for field in fields{if type(get(payload,field,null))=="null"||get(payload,field,"")==""{return field+" is required"}};return ""}
+export func validate_command(command,payload,artifact){
+if command=="request"{return required(payload,["package_id","package_version","manifest_checksum","destinations","actions","requested_by","expires_at"])}
+if command=="approve"{e:=required(payload,["human_actor","package_id","package_version","manifest_checksum","destination","action"]);if e!=""{return e};if type(artifact)!="dict"{return "approve requires --path to the exact manifest"};if artifact["sha256"]!=payload["manifest_checksum"]{return "manifest checksum does not match exact bytes"};return ""}
+if has(["reject","request-changes"],command){return required(payload,["human_actor","package_id","package_version","reason"])}
+if has(["revoke","expire"],command){return required(payload,["human_actor","approval_id","reason"])}
+return ""}

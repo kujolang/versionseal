@@ -1,0 +1,9 @@
+from src.core import dispatch
+from src.args import parse_args
+mut pass:=0;mut fail:=0;func check(ok,label){if ok{pass=pass+1}else{fail=fail+1;eprint("FAIL: "+label)}};func opts(v){return parse_args(v,["json","dry-run","force"])}
+root:="/tmp/versionseal-security-"+uuid_v4();manifest:=root+"-manifest";write_file(manifest,"exact",true);input:=root+"-input";write_file(input,"{\"schema_version\":\"1.0.0\",\"human_actor\":\"approver\",\"package_id\":\"p\",\"package_version\":\"1\",\"manifest_checksum\":\""+sha256_file(manifest)+"\",\"destination\":\"local\",\"action\":\"publish\"}",true)
+check(!dispatch("init",opts(["--state",root+"/../escape"]))["ok"],"state traversal")
+check(!dispatch("approve",opts(["--state",root,"--input",input,"--path",manifest,"--actor","different"]))["ok"],"actor binding")
+created:=dispatch("approve",opts(["--state",root,"--input",input,"--path",manifest,"--actor","approver","--timestamp","2026-08-14T00:00:00Z"]));check(created["ok"],"exact approval")
+write_file(manifest,"drift",true);id:="";if created["ok"]{id=created["value"]["record"]["id"]};check(!dispatch("verify",opts(["--state",root,"--id",id]))["ok"],"checksum drift")
+print(to_string(pass)+" passed; "+to_string(fail)+" failed");if fail>0{exit(1)}
