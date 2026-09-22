@@ -4,4 +4,11 @@ fixture:=parse_json(read_file("fixtures/signatures/rsa-public-key.json"));fixtur
 policy:={"quorum":2,"separation_of_duties":true,"required_roles":["editor","publisher"],"forbidden_role_pairs":[["requester","publisher"]]};decisions:=[{"decision":"approve","actor":"alice","role":"editor"},{"decision":"approve","actor":"bob","role":"publisher"}];check(evaluate_approval_policy(policy,decisions)["approved"],"quorum and separation");check(!evaluate_approval_policy(policy,[decisions[0]])["approved"],"quorum rejection")
 check(!evaluate_expiry("2026-08-15T00:00:00Z","2026-08-14T00:00:00Z")["expired"],"not expired");check(evaluate_expiry("2026-08-15T00:00:00Z","2026-08-15T00:00:00Z")["expired"],"expired with injected clock")
 left:=[{"id":"approval-one","record_type":"decision","origin_host":"host-a","replica_version":1}];right:=[{"id":"approval-one","record_type":"revoke","origin_host":"host-b","replica_version":1}];merged:=merge_replicas(left,right);check(merged["ok"]&&merged["records"][0]["record_type"]=="revoke"&&merged["revocation_precedence"],"replication revocation");conflict:=merge_replicas(left,[{"id":"approval-one","record_type":"decision","origin_host":"host-b","replica_version":1,"changed":true}]);check(!conflict["ok"]&&len(conflict["conflicts"])==1,"replication conflict")
+check(!evaluate_approval_policy({"quorum":"2"},decisions)["ok"],"string quorum rejected")
+check(!evaluate_approval_policy({"quorum":1,"required_roles":"editor"},decisions)["ok"],"malformed role policy rejected")
+check(!evaluate_approval_policy({"quorum":1},[{"decision":"approve","actor":42,"role":"editor"}])["ok"],"non-text actor cannot satisfy quorum")
+check(!evaluate_approval_policy({"quorum":2},[decisions[0],decisions[0]])["approved"],"duplicate actor cannot satisfy quorum")
+revoked := [{"id":"approval-one","record_type":"revoke","origin_host":"host-a","replica_version":1}]
+check(!merge_replicas(revoked,right)["ok"],"divergent equal-version revocations conflict")
+check(!merge_replicas(left,[{"id":"approval-one","origin_host":"host-b","replica_version":"2"}])["ok"],"replica version is an integer")
 check(contention_result("macos",32,32)["ok"],"contention receipt");print(to_string(pass)+" passed; "+to_string(fail)+" failed");if fail>0{exit(1)}
