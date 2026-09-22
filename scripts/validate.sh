@@ -11,12 +11,20 @@ cd "$ROOT"
 "$KUJO_RUNTIME" run tests/storage_test.kujo
 "$KUJO_RUNTIME" run tests/domain_test.kujo
 "$KUJO_RUNTIME" run tests/hardening_test.kujo
-bash scripts/contention_benchmark.sh
+"$KUJO_RUNTIME" run tests/audit_test.kujo
+"$KUJO_RUNTIME" run tests/query_test.kujo
+KUJO_BIN="$KUJO_RUNTIME" bash scripts/contention_benchmark.sh
 while IFS= read -r document; do "$KUJO_RUNTIME" run scripts/validate_json.kujo -- "$document"; done < <(find fixtures schemas -type f -name '*.json' -print | sort)
 tmp_state="$(mktemp -d)"; trap 'find "$tmp_state" -depth -delete' EXIT
 KUJO_BIN="$KUJO_RUNTIME" ./bin/versionseal --help >/dev/null
 KUJO_BIN="$KUJO_RUNTIME" ./bin/versionseal --version --json >/dev/null
 KUJO_BIN="$KUJO_RUNTIME" ./bin/versionseal doctor --state "$tmp_state/state" --json >/dev/null
+KUJO_BIN="$KUJO_RUNTIME" ./bin/versionseal approve --state "$tmp_state/state" --input fixtures/core.json --path fixtures/manifest.txt --actor fixture-human --json >/dev/null
+KUJO_BIN="$KUJO_RUNTIME" ./bin/versionseal validate --state "$tmp_state/state" --json >/dev/null
+KUJO_BIN="$KUJO_RUNTIME" ./bin/versionseal export --state "$tmp_state/state" --output "$tmp_state/export.json" --json >/dev/null
+if KUJO_BIN="$KUJO_RUNTIME" ./bin/versionseal list --limit >/dev/null 2>&1; then exit 1; else test "$?" = 2; fi
+KUJO_BIN="$KUJO_RUNTIME" ./bin/versionseal --version --json > "$tmp_state/version.json"
+"$KUJO_RUNTIME" run scripts/validate_json.kujo -- "$tmp_state/version.json"
 if grep -REn --include='*.kujo' 'python3|node |\.py\b|\.mjs\b' src tests scripts versionseal.kujo kujo.toml; then
   printf 'versionseal validation failed: foreign runtime dependency reference found.\n' >&2; exit 1
 fi

@@ -1,0 +1,11 @@
+// Deterministic benchmark setup; use a fresh directory.
+state := args()[0]
+if file_exists(state) { eprint("fixture directory must not exist"); exit(1) }
+create_dir(state + "/records")
+mut padding := "x"
+while len(padding) < 65536 { padding = padding + padding }
+for index in range(0, 160) {
+    id := "reject-" + to_string(10000 + index)
+    write_file(state + "/records/" + id + ".json",to_json({"id":id,"record_type":"decision","payload":{"padding":padding}}),false)
+}
+print("query fixture: 160 records with 64 KiB padding each")

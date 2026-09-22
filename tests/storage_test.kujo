@@ -16,5 +16,9 @@ check(!path_is_file(root + "/records/" + record["id"] + ".json"), "history confl
 delete_file(event_path)
 check(save_new(root, record)["ok"], "clean retry persists record and audit event")
 
+check(!save_new(root, record)["ok"], "duplicate immutable record rejected")
+check(sha256_file(root + "/records/" + record["id"] + ".json") == parse_json(read_file(event_path))["record_sha256"], "audit checksum matches immutable bytes")
+check(len(list_dir(root + "/locks")) == 0, "normal and conflict paths release locks")
+
 print(to_string(passed) + " passed; " + to_string(failed) + " failed")
 if failed > 0 { exit(1) }

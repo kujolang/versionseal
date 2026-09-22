@@ -9,4 +9,8 @@ created:=dispatch("approve",opts(["--state",root,"--input",input,"--path",manife
 write_file(manifest,"drift",true);id:="";if created["ok"]{id=created["value"]["record"]["id"]};check(!dispatch("verify",opts(["--state",root,"--id",id]))["ok"],"checksum drift")
 foreign_state:=root+"-foreign";check(dispatch("init",opts(["--state",foreign_state]))["ok"],"foreign state baseline");write_file(foreign_state+"/metadata.json","{\"schema_version\":\"1.0.0\",\"tool\":\"other-tool\",\"contract_version\":\"1.0.0\"}",true);check(!dispatch("init",opts(["--state",foreign_state]))["ok"],"incompatible state rejected")
 symlink_state:=root+"-symlink";outside_state:=root+"-outside";create_dir(symlink_state);create_dir(outside_state);linked:=spawn_process(["ln","-s",outside_state,symlink_state+"/records"],{"timeout_ms":5000,"max_output_bytes":4096});if linked.exitcode==0{check(!dispatch("init",opts(["--state",symlink_state]))["ok"],"managed directory symlink rejected")}
+dangling_state:=root+"-dangling";create_dir(dangling_state)
+dangling:=spawn_process(["ln","-s",root+"-absent",dangling_state+"/metadata.json"],{"timeout_ms":5000,"max_output_bytes":4096})
+if dangling.exitcode==0{check(!dispatch("init",opts(["--state",dangling_state]))["ok"],"dangling metadata symlink rejected")}
+
 print(to_string(pass)+" passed; "+to_string(fail)+" failed");if fail>0{exit(1)}

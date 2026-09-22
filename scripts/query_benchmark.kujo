@@ -1,0 +1,4 @@
+from src.storage import list_records
+state := args()[0]
+page := list_records(state, "", "", 1000)
+print(to_json({"records":len(page["records"]),"warnings":len(page["warnings"]),"truncated":page["truncated"],"result_bytes":len(to_json(page))}))

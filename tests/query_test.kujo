@@ -1,0 +1,33 @@
+from src.storage import initialize, list_records
+from src.core import dispatch
+from src.args import parse_args
+mut passed := 0
+mut failed := 0
+func check(ok, label) { if ok { passed = passed + 1 } else { failed = failed + 1; eprint("FAIL: " + label) } }
+func opts(values) { return parse_args(values, ["json", "dry-run", "force"]) }
+root := "/tmp/versionseal-query-" + uuid_v4()
+check(dispatch("init", opts(["--state",root]))["ok"], "initialize")
+mut padding := "x"
+while len(padding) < 65536 { padding = padding + padding }
+for index in range(0, 160) {
+    id := "reject-" + to_string(10000 + index)
+    record := {"schema_version":"1.0.0","tool_version":"0.2.0","contract_version":"1.0.0","id":id,"record_type":"decision","command":"reject","actor":"alice","created_at":"2026-09-22T00:00:00Z","provenance":[],"payload":{"human_actor":"alice","package_id":"package-one","package_version":"1","reason":"review","padding":padding}}
+    write_file(root + "/records/" + id + ".json", to_json(record), true)
+}
+page := list_records(root, "", "", 1000)
+check(page["truncated"] && len(page["records"]) < 160 && len(page["records"]) > 0, "aggregate bytes bound")
+next := list_records(root, "", page["next_after"], 1000)
+check(!next["truncated"] && len(page["records"]) + len(next["records"]) == 160, "byte limited cursor covers all records")
+check(!dispatch("validate",opts(["--state",root]))["ok"], "incomplete validation fails closed")
+check(!dispatch("doctor",opts(["--state",root]))["ok"], "incomplete doctor fails closed")
+for name in list_dir(root + "/records") { delete_file(root + "/records/" + name) }
+for index in range(0, 1100) { write_file(root + "/records/reject-" + to_string(10000 + index) + ".json", "{", true) }
+corrupt := list_records(root,"","",1000)
+check(corrupt["truncated"] && len(corrupt["warnings"]) == 1000, "corrupt scan and warning bounds")
+rest := list_records(root,"",corrupt["next_after"],1000)
+check(!rest["truncated"] && len(rest["warnings"]) == 100, "corrupt cursor advances")
+for name in list_dir(root + "/records") { delete_file(root + "/records/" + name) }
+for dir in ["records","history","locks"] { os_rmdir(root + "/" + dir) }
+delete_file(root + "/metadata.json"); os_rmdir(root)
+print(to_string(passed) + " passed; " + to_string(failed) + " failed")
+if failed > 0 { exit(1) }

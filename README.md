@@ -9,7 +9,7 @@ VersionSeal is a local-first Kujo tool for exact-version human approvals, explic
 
 ## Production capabilities
 
-VersionSeal provides immutable records, append-only audit events, atomic writes, per-record locks, bounded inputs and queries, RSA/HMAC verification adapters, offline public-key fixtures, quorum and separation-of-duties policy evaluation, injected-clock expiry, conflict-aware replication with revocation precedence, and a three-platform contention gate. Optional external capabilities fail honestly when no adapter is configured. It does not claim hosted identity.
+VersionSeal provides immutable records, append-only audit events, atomic writes, exclusive per-record locks, bounded inputs and queries, opt-in RSA/HMAC verification library adapters, offline public-key fixtures, quorum and separation-of-duties policy evaluation, injected-clock expiry, conflict-aware replication with revocation precedence, and a three-platform contention gate. Optional external capabilities fail honestly when no adapter is configured. It does not claim hosted identity.
 
 See the [production review](docs/PRODUCTION_READINESS_REVIEW.md) and completed [hardening worklist](docs/NEXT_SESSION.md).
 
@@ -30,7 +30,7 @@ versionseal doctor --json
 
 ```bash
 versionseal init --state .versionseal --json
-versionseal approve --input fixtures/core.json --actor approver --json
+versionseal approve --input fixtures/core.json --path fixtures/manifest.txt --actor fixture-human --json
 versionseal validate --json
 versionseal export --output versionseal-export.json --json
 ```
@@ -59,3 +59,5 @@ bash scripts/validate.sh
 ```
 
 The gate checks the entrypoint, every Kujo suite, JSON artifacts, CLI smoke paths, foreign-runtime boundaries, and the Git diff.
+
+See [audit evidence](docs/audits/repository-hardening.md) for verification scope, measurements, and remaining limits. Query pages expose `next_after`; incomplete whole-state scans fail closed.

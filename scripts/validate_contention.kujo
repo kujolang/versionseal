@@ -1,0 +1,8 @@
+from src.storage import load_record
+state := args()[0]
+if len(list_dir(state + "/records")) != 33 || len(list_dir(state + "/history")) != 33 || len(list_dir(state + "/locks")) != 0 { eprint("contention left inconsistent state"); exit(1) }
+for name in list_dir(state + "/history") {
+    event := parse_json(read_file(state + "/history/" + name))
+    loaded := load_record(state, event["record_id"])
+    if !loaded["ok"] || loaded["checksum"] != event["record_sha256"] { eprint("contention audit checksum mismatch"); exit(1) }
+}

@@ -1,0 +1,42 @@
+from src.core import dispatch
+from src.args import parse_args
+from src.common import valid_timestamp
+from src.hardening import evaluate_expiry, evaluate_approval_policy
+mut passed := 0
+mut failed := 0
+func check(ok, label) { if ok { passed = passed + 1 } else { failed = failed + 1; eprint("FAIL: " + label) } }
+func opts(values) { return parse_args(values, ["json", "dry-run", "force"]) }
+root := "/tmp/versionseal-audit-" + uuid_v4()
+input_file := root + "-input.json"
+payload := {"human_actor":"alice","package_id":"package-one","package_version":"1","reason":"review"}
+write_file(input_file, to_json(payload), true)
+dry := dispatch("reject", opts(["--state",root,"--actor","alice","--input",input_file,"--dry-run"]))
+check(dry["ok"] && !file_exists(root), "dry run must not create state")
+check(!valid_timestamp("2026-02-31T00:00:00Z"), "calendar-invalid timestamp rejected")
+check(valid_timestamp("2024-02-29T00:00:00Z") && !valid_timestamp("2100-02-29T00:00:00Z"), "Gregorian leap years")
+check(!evaluate_expiry("2026-09-22T00:00:00.1Z", "2026-09-22T00:00:00Z")["expired"], "fractional expiry follows whole second")
+check(evaluate_expiry("2026-09-22T00:00:00Z", "2026-09-22T00:00:00.1Z")["expired"], "fractional current time follows whole second")
+check(evaluate_expiry("2026-09-22T00:00:00.1Z", "2026-09-22T00:00:00.100Z")["expired"], "equivalent fractional representations")
+check(len(opts(["--actor"])["errors"]) == 1, "missing flag value rejected")
+created := dispatch("reject",opts(["--state",root,"--actor","alice","--input",input_file,"--id","reject-audit","--timestamp","2026-09-22T00:00:00Z"]))
+check(created["ok"], "create valid rejection")
+record := created["value"]["record"]
+payload["human_actor"] = "bob"
+record["payload"] = payload
+write_file(root + "/records/reject-audit.json",to_json(record),true)
+check(!dispatch("validate",opts(["--state",root,"--id","reject-audit"]))["ok"], "stored actor binding validated")
+payload["human_actor"] = "alice"
+payload["api_key"] = "fixture-only"
+record["payload"] = payload
+write_file(root + "/records/reject-audit.json",to_json(record),true)
+check(!dispatch("validate",opts(["--state",root,"--id","reject-audit"]))["ok"], "stored secret field rejected")
+config := root + "-config.json"
+write_file(config,"{\"actor\":false}",true)
+check(!dispatch("version",opts(["--config",config]))["ok"], "configuration types validated")
+check(!dispatch("nonsense", opts(["--state",root,"--actor","alice"]))["ok"], "dispatch rejects unknown command")
+write_file(config,"{\"limit\":2,\"actor\":\"alice\"}",true)
+check(dispatch("version",opts(["--config",config]))["ok"], "valid typed config remains supported")
+check(len(opts(["--limit="])["errors"]) == 1, "empty equals flag rejected")
+
+print(to_string(passed) + " passed; " + to_string(failed) + " failed")
+if failed > 0 { exit(1) }
