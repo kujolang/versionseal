@@ -1,0 +1,2 @@
+VersionSeal contention passed: platform=Darwin distinct=32 same-id-winners=1 history=33
+exit=0

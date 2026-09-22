@@ -15,3 +15,11 @@
 ## 0.1.0 - 2026-08-14
 
 - Initial Kujo-native release with working local records, validation, contracts, fixtures, and safety boundaries.
+
+### Repository hardening (2026-09-22)
+
+- Replaced idempotent directory locks with exclusive atomic files and no-replace record/history writes.
+- Made dry-run side-effect free; tightened stored actor binding, timestamps, policy types, CLI arguments, and configuration validation.
+- Bounded query bytes and corrupt scans, added continuation cursors, and made incomplete validation fail closed.
+- Corrected fractional expiry, divergent revocation merging, portable runtime discovery, record schema compatibility, and executable quickstart fixtures.
+- Added regression suites and same-ID contention/history integrity gates; see `docs/audits/repository-hardening.md`.

@@ -1,0 +1,12 @@
+FAIL: dry run must not create state
+FAIL: calendar-invalid timestamp rejected
+FAIL: Gregorian leap years
+FAIL: fractional expiry follows whole second
+FAIL: fractional current time follows whole second
+FAIL: equivalent fractional representations
+FAIL: missing flag value rejected
+FAIL: stored actor binding validated
+FAIL: stored secret field rejected
+FAIL: configuration types validated
+FAIL: dispatch rejects unknown command
+1 passed; 11 failed
