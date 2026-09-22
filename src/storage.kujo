@@ -1,4 +1,4 @@
-from src.common import get, parse_object, safe_id
+from src.common import get, parse_object, safe_id, valid_timestamp, utf8_size
 
 // path_is_symlink uses lstat and errors on an absent path in Kujo 1.x.
 export func is_symlink(path) {
@@ -55,42 +55,135 @@ export func initialize(state, metadata) {
 
 func lock_path(state, id) { return join_path(locks_dir(state), id + ".lock") }
 
+// Pending lock files double as immutable write-ahead intents. Recovery never unlinks
+// a lock: a live writer may still own it. Only its original writer releases it.
 func acquire_lock(state, id) {
-    path := lock_path(state, id)
-    // create_dir is recursive/idempotent, so it cannot provide mutual exclusion.
-    try { write_file_atomic(path, "locked\n", false) } except error { return {"ok": false, "code": "write_conflict", "error": "could not acquire record lock: " + id} }
-    return {"ok": true, "path": path}
+    owned_lock_path := lock_path(state, id)
+    try { write_file_atomic(owned_lock_path, "locked\n", false) } except error { return {"ok": false, "code": "write_conflict", "error": "could not acquire record lock: " + id} }
+    return {"ok": true, "path": owned_lock_path}
 }
 
 func release_lock(path) { delete_file(path) }
 
+func managed_error(state) {
+    managed_state_error := validate_state_path(state); if managed_state_error != "" { return managed_state_error }
+    for managed_directory in [records_dir(state), history_dir(state), locks_dir(state)] {
+        if !path_is_dir(managed_directory) || is_symlink(managed_directory) { return "managed state paths must be regular directories" }
+    }
+    return ""
+}
+
+func record_event(record, checksum) {
+    return {"schema_version": "1.0.0", "event": "record.created", "record_id": record["id"], "actor": record["actor"], "at": record["created_at"], "record_sha256": checksum}
+}
+
+func event_path_for(state, record) {
+    return join_path(history_dir(state), substring(sha256(record["created_at"] + "\n" + record["id"]), 0, 32) + ".json")
+}
+
+func read_intent(state, id) {
+    intent_file := lock_path(state, id)
+    if !path_is_file(intent_file) || is_symlink(intent_file) { return {"ok": false, "code": "unrecoverable_lock", "error": "lock is missing, legacy, or not a regular file"} }
+    if file_size(intent_file) > 4194304 { return {"ok": false, "code": "intent_too_large", "error": "write intent exceeds 4 MiB"} }
+    parsed_intent := parse_object(read_file(intent_file), "write intent"); if !parsed_intent["ok"] { return {"ok": false, "code": "unrecoverable_lock", "error": "lock does not contain a valid write intent"} }
+    intent_document := parsed_intent["value"]; intent_contents := get(intent_document, "record_text", null)
+    if get(intent_document, "schema_version", "") != "1.0.0" || get(intent_document, "kind", "") != "record.create" || type(intent_contents) != "string" { return {"ok": false, "code": "invalid_intent", "error": "unsupported write intent"} }
+    if utf8_size(intent_contents) > 1048576 || sha256(intent_contents) != get(intent_document, "record_sha256", "") { return {"ok": false, "code": "invalid_intent", "error": "write intent size or checksum mismatch"} }
+    intent_record := parse_object(intent_contents, "intent record"); if !intent_record["ok"] { return intent_record }
+    intent_value := intent_record["value"]
+    if get(intent_value, "id", "") != id || type(get(intent_value, "actor", null)) != "string" || !valid_timestamp(get(intent_value, "created_at", "")) { return {"ok": false, "code": "invalid_intent", "error": "write intent identity or provenance is invalid"} }
+    return {"ok": true, "record": intent_value, "contents": intent_contents, "checksum": intent_document["record_sha256"]}
+}
+
+// Inspect before writing either member. Exact byte equality makes replay idempotent
+// and rejects divergent files; paths always come from validated IDs, never the intent.
+func inspect_member(path, contents) {
+    if is_symlink(path) { return {"ok": false, "code": "recovery_conflict", "error": "transaction member is a symlink"} }
+    if !file_exists(path) { return {"ok": true, "exists": false} }
+    if !path_is_file(path) || file_size(path) != utf8_size(contents) { return {"ok": false, "code": "recovery_conflict", "error": "transaction member differs from original intent"} }
+    if read_file(path) != contents { return {"ok": false, "code": "recovery_conflict", "error": "transaction member differs from original intent"} }
+    return {"ok": true, "exists": true}
+}
+
+func publish_member(path, contents) {
+    publication_inspected := inspect_member(path, contents); if !publication_inspected["ok"] || publication_inspected["exists"] { return publication_inspected }
+    try { write_file_atomic(path, contents, false) } except error {
+        // Another recovery or the original writer may have published identical bytes.
+        publication_concurrent := inspect_member(path, contents)
+        if publication_concurrent["ok"] && publication_concurrent["exists"] { return publication_concurrent }
+        return {"ok": false, "code": "write_failed", "error": "transaction publication failed; original intent retained"}
+    }
+    return {"ok": true, "exists": true}
+}
+
+func complete_intent(state, prepared, dry_run) {
+    commit_record := prepared["record"]; commit_path := record_path(state, commit_record["id"])
+    commit_event_path := event_path_for(state, commit_record)
+    commit_event_text := to_json_pretty(record_event(commit_record, prepared["checksum"])) + "\n"
+    commit_stored := inspect_member(commit_path, prepared["contents"]); if !commit_stored["ok"] { return commit_stored }
+    commit_audited := inspect_member(commit_event_path, commit_event_text); if !commit_audited["ok"] { return commit_audited }
+    if dry_run { return {"ok": true, "value": {"id": commit_record["id"], "dry_run": true, "record_exists": commit_stored["exists"], "history_exists": commit_audited["exists"], "complete": (commit_stored["exists"] && commit_audited["exists"])}} }
+    commit_stored = publish_member(commit_path, prepared["contents"]); if !commit_stored["ok"] { return commit_stored }
+    commit_audited = publish_member(commit_event_path, commit_event_text); if !commit_audited["ok"] { return commit_audited }
+    return {"ok": true, "value": {"id": commit_record["id"], "path": commit_path, "checksum": prepared["checksum"], "complete": true, "lock_retained": true}}
+}
+
+export func recover_record(state, id, dry_run) {
+    if !safe_id(id) { return {"ok": false, "code": "unsafe_id", "error": "recover requires a safe record id"} }
+    recovery_error := managed_error(state); if recovery_error != "" { return {"ok": false, "code": "unsafe_state", "error": recovery_error} }
+    recovery_prepared := read_intent(state, id); if !recovery_prepared["ok"] { return recovery_prepared }
+    return complete_intent(state, recovery_prepared, dry_run)
+}
+
+export func pending_writes(state) {
+    mut pending_issues := []; mut pending_completed := 0; mut pending_scanned := 0
+    pending_error := validate_state_path(state)
+    if pending_error != "" { return {"issues": [{"code": "unsafe_state", "error": pending_error}], "completed": 0, "truncated": false} }
+    pending_dir := locks_dir(state)
+    if is_symlink(pending_dir) || (file_exists(pending_dir) && !path_is_dir(pending_dir)) { return {"issues": [{"code": "unsafe_state", "error": "locks must be a regular directory"}], "completed": 0, "truncated": false} }
+    if !path_is_dir(pending_dir) { return {"issues": pending_issues, "completed": 0, "truncated": false} }
+    for pending_name in sort(list_dir(pending_dir)) {
+        if ends_with(pending_name, ".lock") {
+            if pending_scanned >= 1000 { return {"issues": pending_issues, "completed": pending_completed, "truncated": true} }
+            pending_id := substring(pending_name, 0, len(pending_name) - 5)
+            pending_checked := recover_record(state, pending_id, true)
+            // A successful writer may remove its own intent while this read-only scan runs.
+            if !pending_checked["ok"] && !file_exists(join_path(pending_dir, pending_name)) && !is_symlink(join_path(pending_dir, pending_name)) { continue }
+            if pending_checked["ok"] && pending_checked["value"]["complete"] { pending_completed = pending_completed + 1 }
+            else { pending_issues = push(pending_issues, {"id": pending_id, "code": get(pending_checked, "code", "write_incomplete"), "error": get(pending_checked, "error", "write intent needs recovery")}) }
+            pending_scanned = pending_scanned + 1
+        }
+    }
+    return {"issues": pending_issues, "completed": pending_completed, "truncated": false}
+}
+
 export func save_new(state, record) {
-    id := record["id"]
-    if !safe_id(id) { return {"ok": false, "code": "unsafe_id", "error": "unsafe record id"} }
-    state_error := validate_state_path(state)
-    if state_error != "" { return {"ok": false, "code": "unsafe_state", "error": state_error} }
-    for dir in [records_dir(state), history_dir(state), locks_dir(state)] {
-        if !path_is_dir(dir) || is_symlink(dir) { return {"ok": false, "code": "unsafe_state", "error": "managed state paths must be regular directories"} }
-    }
-    serialized := to_json_pretty(record) + "\n"
-    if len(serialized) > 1048576 { return {"ok": false, "code": "record_too_large", "error": "serialized record exceeds 1 MiB"} }
-    checksum := sha256(serialized)
-    event := {"schema_version": "1.0.0", "event": "record.created", "record_id": id, "actor": record["actor"], "at": record["created_at"], "record_sha256": checksum}
-    event_path := join_path(history_dir(state), substring(sha256(record["created_at"] + "\n" + id), 0, 32) + ".json")
-    lock := acquire_lock(state, id); if !lock["ok"] { return lock }
-    path := record_path(state, id)
-    if path_is_file(path) { release_lock(lock["path"]); return {"ok": false, "code": "duplicate_id", "error": "record already exists: " + id} }
-    if is_symlink(path) { release_lock(lock["path"]); return {"ok": false, "code": "symlink_escape", "error": "record symlinks are not allowed"} }
-    if file_exists(event_path) || is_symlink(event_path) { release_lock(lock["path"]); return {"ok": false, "code": "history_conflict", "error": "audit history event already exists"} }
-    try { write_file_atomic(path, serialized, false) } except error { release_lock(lock["path"]); return {"ok": false, "code": "write_failed", "error": "atomic record write failed"} }
-    try { write_file_atomic(event_path, to_json_pretty(event) + "\n", false) } except error {
-        try { delete_file(path) } except rollback_error {}
-        release_lock(lock["path"])
-        if path_is_file(path) { return {"ok": false, "code": "history_write_failed", "error": "audit history write failed and record rollback was incomplete"} }
-        return {"ok": false, "code": "history_write_failed", "error": "audit history write failed; record write was rolled back"}
-    }
-    release_lock(lock["path"])
-    return {"ok": true, "value": {"path": path, "checksum": checksum}}
+    new_id := record["id"]
+    if !safe_id(new_id) { return {"ok": false, "code": "unsafe_id", "error": "unsafe record id"} }
+    new_state_error := managed_error(state); if new_state_error != "" { return {"ok": false, "code": "unsafe_state", "error": new_state_error} }
+    new_serialized := to_json_pretty(record) + "\n"
+    if utf8_size(new_serialized) > 1048576 { return {"ok": false, "code": "record_too_large", "error": "serialized record exceeds 1 MiB"} }
+    new_checksum := sha256(new_serialized)
+    new_event_path := event_path_for(state, record)
+    new_path := record_path(state, new_id)
+    if path_is_file(new_path) { return {"ok": false, "code": "duplicate_id", "error": "record already exists: " + new_id} }
+    if is_symlink(new_path) { return {"ok": false, "code": "symlink_escape", "error": "record symlinks are not allowed"} }
+    if file_exists(new_event_path) || is_symlink(new_event_path) { return {"ok": false, "code": "history_conflict", "error": "audit history event already exists"} }
+    new_intent := {"schema_version": "1.0.0", "kind": "record.create", "record_text": new_serialized, "record_sha256": new_checksum}
+    new_lock := acquire_lock(state, new_id); if !new_lock["ok"] { return new_lock }
+    // A previous owner may have committed between preflight and acquisition.
+    // Never leave a new, divergent intent over its already immutable record.
+    if file_exists(new_path) || is_symlink(new_path) { release_lock(new_lock["path"]); return {"ok": false, "code": "duplicate_id", "error": "record already exists: " + new_id} }
+    if file_exists(new_event_path) || is_symlink(new_event_path) { release_lock(new_lock["path"]); return {"ok": false, "code": "history_conflict", "error": "audit history event already exists"} }
+    // Upgrade the owned claim only after the under-lock duplicate checks. Until
+    // this atomic replacement, recovery cannot act on the non-recoverable claim.
+    try { write_file_atomic(new_lock["path"], to_json(new_intent) + "\n", true) } except error { return {"ok": false, "code": "intent_write_failed", "error": "could not publish write intent; lock retained"} }
+    // From this point forward preserve intent on failure; never roll back published
+    // members that a concurrent recovery may already have completed.
+    new_saved := complete_intent(state, {"record": record, "contents": new_serialized, "checksum": new_checksum}, false)
+    if !new_saved["ok"] { return new_saved }
+    release_lock(new_lock["path"])
+    return {"ok": true, "value": {"path": new_path, "checksum": new_checksum}}
 }
 
 export func load_record(state, id) {
@@ -99,10 +192,18 @@ export func load_record(state, id) {
     dir := records_dir(state); if is_symlink(dir) || (file_exists(dir) && !path_is_dir(dir)) { return {"ok": false, "code": "unsafe_state", "error": "records path must be a regular directory"} }
     path := record_path(state, id)
     if !path_is_file(path) || path_is_symlink(path) { return {"ok": false, "code": "not_found", "error": "record not found: " + id} }
-    if file_size(path) > 1048576 { return {"ok": false, "code": "record_too_large", "error": "record exceeds 1 MiB"} }
+    record_size := file_size(path)
+    if record_size > 1048576 { return {"ok": false, "code": "record_too_large", "error": "record exceeds 1 MiB"} }
+    pending_path := lock_path(state, id)
+    if file_exists(pending_path) || is_symlink(pending_path) {
+        pending := recover_record(state, id, true)
+        if !pending["ok"] || !pending["value"]["complete"] {
+            if file_exists(pending_path) || is_symlink(pending_path) { return {"ok": false, "code": "write_incomplete", "error": "record has an incomplete or conflicting write intent"} }
+        }
+    }
     contents := read_file(path); parsed := parse_object(contents, "record " + id); if !parsed["ok"] { return parsed }
     if get(parsed["value"], "id", "") != id { return {"ok": false, "code": "id_mismatch", "error": "record id does not match filename"} }
-    return {"ok": true, "value": parsed["value"], "checksum": sha256(contents), "bytes": len(contents)}
+    return {"ok": true, "value": parsed["value"], "checksum": sha256(contents), "bytes": record_size}
 }
 
 export func list_records(state, kind, after, limit) {

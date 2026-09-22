@@ -1,8 +1,9 @@
+from tests.support import test_root
 from src.core import dispatch
 from src.args import parse_args
 mut pass:=0;mut fail:=0
 func check(ok,label){if ok{pass=pass+1}else{fail=fail+1;eprint("FAIL: "+label)}}
-root:="/tmp/versionseal-test-"+uuid_v4()
+root:=test_root("versionseal-test")
 func opts(v){return parse_args(v,["json","dry-run","force","act","yes"])}
 check(dispatch("init",opts(["--state",root]))["ok"],"init")
 manifest:=root+"-manifest";write_file(manifest,"approved bytes",true);input:=root+"-approval.json";write_file(input,"{\"schema_version\":\"1.0.0\",\"human_actor\":\"fixture-human\",\"package_id\":\"package-fixture\",\"package_version\":\"1\",\"manifest_checksum\":\""+sha256_file(manifest)+"\",\"destination\":\"local\",\"action\":\"publish\"}",true)

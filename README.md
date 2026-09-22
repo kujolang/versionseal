@@ -61,3 +61,5 @@ bash scripts/validate.sh
 The gate checks the entrypoint, every Kujo suite, JSON artifacts, CLI smoke paths, foreign-runtime boundaries, and the Git diff.
 
 See [audit evidence](docs/audits/repository-hardening.md) for verification scope, measurements, and remaining limits. Query pages expose `next_after`; incomplete whole-state scans fail closed.
+
+Interrupted writes can be inspected with `recover --id ID --dry-run` and completed with `recover --id ID`. See [recovery and ownership rules](docs/recovery.md); recovery never steals a writer lock. Full validation now runs on Linux, macOS, and Windows in CI.

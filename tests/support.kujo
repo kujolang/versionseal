@@ -1,0 +1,8 @@
+// Use a repository-relative scratch root on every OS. The validation gate owns
+// and removes its unique run directory, including sidecar fixtures on failures.
+export func test_root(prefix) {
+    test_base := env("VERSIONSEAL_TEST_ROOT")
+    if test_base == "" { test_base = "tests/tmp" }
+    create_dir(test_base)
+    return join_path(test_base, prefix + "-" + uuid_v4())
+}

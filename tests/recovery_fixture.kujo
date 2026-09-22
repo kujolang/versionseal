@@ -1,0 +1,15 @@
+from src.storage import initialize, load_record, recover_record
+fixture_state := args()[1]
+fixture_id := "reject-recovery"
+if args()[0] == "seed" {
+    initialized := initialize(fixture_state,{"schema_version":"1.0.0","tool":"versionseal","tool_version":"0.2.0","contract_version":"1.0.0","created_at":"2026-09-22T00:00:00Z"})
+    if !initialized["ok"] { eprint(to_json(initialized)); exit(1) }
+    fixture_record := {"schema_version":"1.0.0","tool_version":"0.2.0","contract_version":"1.0.0","id":fixture_id,"record_type":"decision","command":"reject","actor":"alice","created_at":"2026-09-22T00:00:00Z","provenance":[],"payload":{"human_actor":"alice","package_id":"package-one","package_version":"1","reason":"review"}}
+    fixture_text := to_json_pretty(fixture_record)+"\n"
+    write_file_atomic(fixture_state+"/locks/"+fixture_id+".lock",to_json({"schema_version":"1.0.0","kind":"record.create","record_text":fixture_text,"record_sha256":sha256(fixture_text)}),false)
+} else if args()[0] == "check" {
+    if len(list_dir(fixture_state+"/records")) != 1 || len(list_dir(fixture_state+"/history")) != 1 || len(list_dir(fixture_state+"/locks")) != 1 { eprint("recovery contention changed transaction cardinality"); exit(1) }
+    loaded := load_record(fixture_state,fixture_id)
+    inspected := recover_record(fixture_state,fixture_id,true)
+    if !loaded["ok"] || !inspected["ok"] || !inspected["value"]["complete"] { eprint("recovery contention left an incomplete pair"); exit(1) }
+} else { eprint("expected seed or check"); exit(2) }

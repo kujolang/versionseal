@@ -2,9 +2,14 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 KUJO_RUNTIME="${KUJO_BIN:-$ROOT/../kujo/target/release/kujo}"
+if [[ ! -x "$KUJO_RUNTIME" && -x "$KUJO_RUNTIME.exe" ]]; then KUJO_RUNTIME="$KUJO_RUNTIME.exe"; fi
 if [[ ! -x "$KUJO_RUNTIME" ]] && command -v kujo >/dev/null 2>&1; then KUJO_RUNTIME="$(command -v kujo)"; fi
 if [[ ! -x "$KUJO_RUNTIME" ]]; then printf 'versionseal: Kujo runtime not found; set KUJO_BIN.\n' >&2; exit 2; fi
 cd "$ROOT"
+export VERSIONSEAL_TEST_ROOT="tests/tmp/gate-$$"
+mkdir -p "$VERSIONSEAL_TEST_ROOT"
+tmp_state="$(mktemp -d)"
+trap 'find "$tmp_state" "$VERSIONSEAL_TEST_ROOT" -depth -delete' EXIT
 "$KUJO_RUNTIME" check versionseal.kujo
 "$KUJO_RUNTIME" run tests/test.kujo
 "$KUJO_RUNTIME" run tests/security_test.kujo
@@ -13,9 +18,10 @@ cd "$ROOT"
 "$KUJO_RUNTIME" run tests/hardening_test.kujo
 "$KUJO_RUNTIME" run tests/audit_test.kujo
 "$KUJO_RUNTIME" run tests/query_test.kujo
+"$KUJO_RUNTIME" run tests/recovery_test.kujo
+"$KUJO_RUNTIME" run tests/recovery_test.kujo --interpreter
 KUJO_BIN="$KUJO_RUNTIME" bash scripts/contention_benchmark.sh
 while IFS= read -r document; do "$KUJO_RUNTIME" run scripts/validate_json.kujo -- "$document"; done < <(find fixtures schemas -type f -name '*.json' -print | sort)
-tmp_state="$(mktemp -d)"; trap 'find "$tmp_state" -depth -delete' EXIT
 KUJO_BIN="$KUJO_RUNTIME" ./bin/versionseal --help >/dev/null
 KUJO_BIN="$KUJO_RUNTIME" ./bin/versionseal --version --json >/dev/null
 KUJO_BIN="$KUJO_RUNTIME" ./bin/versionseal doctor --state "$tmp_state/state" --json >/dev/null

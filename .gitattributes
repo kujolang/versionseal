@@ -1,0 +1,6 @@
+# Executable source must remain portable in Windows checkouts.
+*.kujo text eol=lf
+*.sh text eol=lf
+bin/versionseal text eol=lf
+# This fixture's exact bytes are bound by fixtures/core.json.
+fixtures/manifest.txt -text

@@ -1,0 +1,3 @@
+func nested() { path := "nested"; return path }
+func caller() { path := "caller"; nested(); return path }
+print(caller())

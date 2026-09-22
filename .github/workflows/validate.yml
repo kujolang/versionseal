@@ -51,4 +51,5 @@ jobs:
       - shell: bash
         env:
           KUJO_BIN: ${{ github.workspace }}/.runtime/kujo/target/release/kujo
-        run: bash scripts/contention_benchmark.sh
+          MSYS: winsymlinks:nativestrict
+        run: bash scripts/validate.sh

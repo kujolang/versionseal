@@ -1,3 +1,4 @@
+from tests.support import test_root
 from src.storage import initialize, list_records
 from src.core import dispatch
 from src.args import parse_args
@@ -5,7 +6,7 @@ mut passed := 0
 mut failed := 0
 func check(ok, label) { if ok { passed = passed + 1 } else { failed = failed + 1; eprint("FAIL: " + label) } }
 func opts(values) { return parse_args(values, ["json", "dry-run", "force"]) }
-root := "/tmp/versionseal-query-" + uuid_v4()
+root := test_root("versionseal-query")
 check(dispatch("init", opts(["--state",root]))["ok"], "initialize")
 mut padding := "x"
 while len(padding) < 65536 { padding = padding + padding }

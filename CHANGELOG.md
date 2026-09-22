@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Added idempotent interrupted-write recovery with bounded exact-byte intents, no replacement, and no automatic lock stealing.
+- Detect incomplete writes in reads, doctor, and validation; retain failure evidence instead of rolling back published members.
+- Fixed UTF-8 byte limits/receipts and added Unicode, recovery, interpreter, and concurrent replay regression coverage.
+- Run full verification on Linux, macOS, and Windows with portable, cleaned test scratch paths and stable fixture bytes.
+
 - Standardized README badge ordering and repository-local artifact ignores.
 - Kept Loop Engineering evidence available locally while removing it from published source.
 

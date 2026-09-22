@@ -1,0 +1,109 @@
+from tests.support import test_root
+from src.common import utf8_size
+from src.storage import initialize, recover_record, load_record, pending_writes, save_new
+from src.core import dispatch
+from src.args import parse_args
+mut passed := 0
+mut failed := 0
+func check(ok, label) { if ok { passed = passed + 1 } else { failed = failed + 1; eprint("FAIL: " + label) } }
+func opts(values) { return parse_args(values, ["json", "dry-run", "force"]) }
+root := test_root("versionseal-recovery")
+metadata := {"schema_version":"1.0.0","tool":"versionseal","tool_version":"0.2.0","contract_version":"1.0.0","created_at":"2026-09-22T00:00:00Z"}
+check(initialize(root, metadata)["ok"], "initialize recovery state")
+func sample(id) { return {"schema_version":"1.0.0","tool_version":"0.2.0","contract_version":"1.0.0","id":id,"record_type":"decision","command":"reject","actor":"alice","created_at":"2026-09-22T00:00:00Z","provenance":[],"payload":{"human_actor":"alice","package_id":"package-one","package_version":"1","reason":"review"}} }
+func journal(record) { text := to_json_pretty(record) + "\n"; return {"schema_version":"1.0.0","kind":"record.create","record_text":text,"record_sha256":sha256(text)} }
+func history_path(record) { return root + "/history/" + substring(sha256(record["created_at"] + "\n" + record["id"]),0,32) + ".json" }
+// No record yet: a process died after intent publication.
+record := sample("reject-intent")
+intent := journal(record)
+lock := root + "/locks/reject-intent.lock"
+write_file_atomic(lock,to_json(intent)+"\n",false)
+preview := dispatch("recover",opts(["--state",root,"--id","reject-intent","--dry-run"]))
+check(preview["ok"] && !preview["value"]["record_exists"] && !preview["value"]["history_exists"], "dry-run reports exact missing members")
+check(!file_exists(root+"/records/reject-intent.json") && !file_exists(history_path(record)), "dry-run writes nothing")
+check(!dispatch("doctor",opts(["--state",root]))["ok"], "doctor catches intent-only crash")
+check(!dispatch("validate",opts(["--state",root]))["ok"], "empty state with intent cannot validate")
+recovered := dispatch("recover",opts(["--state",root,"--id","reject-intent"]))
+check(recovered["ok"] && recovered["value"]["lock_retained"], "intent-only recovery retains writer lock")
+check(read_file(root+"/records/reject-intent.json") == intent["record_text"], "original record bytes preserved")
+event := parse_json(read_file(history_path(record)))
+check(event["record_sha256"] == intent["record_sha256"] && event["actor"] == "alice", "original audit provenance restored")
+check(recover_record(root,"reject-intent",false)["ok"], "recovery is idempotent")
+check(load_record(root,"reject-intent")["ok"] && dispatch("validate",opts(["--state",root]))["ok"], "completed retained intent is readable and valid")
+check(!save_new(root,record)["ok"], "recovery does not permit duplicate IDs")
+check(read_file(lock) == to_json(intent)+"\n", "recovery never changes writer-owned intent")
+// Record published but event missing: the old two-file crash window.
+record = sample("reject-record")
+intent = journal(record)
+write_file_atomic(root+"/locks/reject-record.lock",to_json(intent),false)
+write_file_atomic(root+"/records/reject-record.json",intent["record_text"],false)
+check(!load_record(root,"reject-record")["ok"], "incomplete record is not exposed as committed")
+check(recover_record(root,"reject-record",false)["ok"], "record-only recovery fills history")
+check(load_record(root,"reject-record")["ok"], "completed pair exposed")
+// Conflict must not change either member or discard evidence.
+record = sample("reject-conflict")
+intent = journal(record)
+write_file_atomic(root+"/locks/reject-conflict.lock",to_json(intent),false)
+write_file_atomic(history_path(record),"{}\n",false)
+check(!recover_record(root,"reject-conflict",false)["ok"], "divergent history fails closed")
+check(!dispatch("recover",opts(["--state",root,"--id","reject-conflict","--force"]))["ok"], "force cannot bypass a recovery conflict")
+check(!file_exists(root+"/records/reject-conflict.json") && read_file(history_path(record)) == "{}\n", "conflict detected before creating record")
+delete_file(history_path(record))
+write_file_atomic(root+"/records/reject-conflict.json","{}\n",false)
+check(!recover_record(root,"reject-conflict",false)["ok"] && !file_exists(history_path(record)), "divergent record fails without creating history")
+// A legacy lock is evidence of ownership, not an authorization to invent a journal.
+write_file(root+"/locks/reject-legacy.lock","locked\n",false)
+check(!recover_record(root,"reject-legacy",false)["ok"], "legacy lock never guessed or stolen")
+write_file(root+"/locks/reject-bad.lock","{",false)
+check(!recover_record(root,"reject-bad",false)["ok"], "malformed intent rejected")
+record = sample("reject-tampered")
+intent = journal(record); intent["record_sha256"] = "wrong"
+write_file(root+"/locks/reject-tampered.lock",to_json(intent),false)
+check(!recover_record(root,"reject-tampered",false)["ok"], "intent checksum tampering rejected")
+record = sample("reject-wrongid")
+write_file(root+"/locks/reject-mismatch.lock",to_json(journal(record)),false)
+check(!recover_record(root,"reject-mismatch",false)["ok"], "intent filename binding enforced")
+check(!recover_record(root,"../outside",false)["ok"], "recovery ID traversal rejected")
+// Unicode survives byte-exact publication, verification, and replay.
+record = sample("reject-unicode")
+record["actor"] = "Zoë"
+unicode_payload := record["payload"]; unicode_payload["human_actor"] = "Zoë"; record["payload"] = unicode_payload
+intent = journal(record)
+write_file(root+"/locks/reject-unicode.lock",to_json(intent),false)
+check(recover_record(root,"reject-unicode",false)["ok"], "Unicode record recovery")
+check(recover_record(root,"reject-unicode",false)["ok"], "Unicode byte-exact replay")
+check(utf8_size("") == 0 && utf8_size("a") == 1 && utf8_size("ab") == 2 && utf8_size("abc") == 3 && utf8_size("Zoë💾") == 8, "UTF-8 byte count handles padding and Unicode")
+check(load_record(root,"reject-unicode")["bytes"] == file_size(root+"/records/reject-unicode.json"), "load byte receipt matches Unicode file size")
+exported := dispatch("export",opts(["--state",root,"--output",root+"/export.json"]))
+check(exported["ok"] && exported["value"]["bytes"] == file_size(root+"/export.json"), "export byte receipt matches Unicode file size")
+delete_file(root+"/export.json")
+mut wide := "💾"
+while len(wide) < 262144 { wide = wide + wide }
+record = sample("reject-wide")
+wide_payload := record["payload"]; wide_payload["padding"] = wide; record["payload"] = wide_payload
+wide_result := save_new(root,record)
+check(!wide_result["ok"] && wide_result["code"] == "record_too_large", "record byte ceiling rejects oversized Unicode")
+check(!file_exists(root+"/locks/reject-wide.lock"), "oversized Unicode rejected before intent publication")
+// Refuse both file and dangling symlink redirection without writing a record.
+record = sample("reject-symlink")
+write_file(root+"/locks/reject-symlink.lock",to_json(journal(record)),false)
+link_result := spawn_process(["ln","-s","../absent",history_path(record)],{"timeout_ms":5000,"max_output_bytes":4096})
+check(link_result.exitcode == 0, "recovery symlink fixture created")
+if link_result.exitcode == 0 { check(!recover_record(root,"reject-symlink",false)["ok"] && !file_exists(root+"/records/reject-symlink.json"), "recovery rejects dangling history symlink") }
+mut oversized := "x"
+while len(oversized) <= 4194304 { oversized = oversized + oversized }
+write_file(root+"/locks/reject-large.lock",oversized,false)
+check(!recover_record(root,"reject-large",false)["ok"], "oversized write intent bounded before parsing")
+for dir in ["records","history","locks"] { for name in list_dir(root+"/"+dir) { delete_file(root+"/"+dir+"/"+name) }; os_rmdir(root+"/"+dir) }
+delete_file(root+"/metadata.json"); os_rmdir(root)
+bounded_root := test_root("versionseal-pending-bound")
+check(initialize(bounded_root,metadata)["ok"], "initialize bounded pending scan")
+for index in range(0,1001) { write_file(bounded_root+"/locks/reject-"+to_string(10000+index)+".lock","locked\n",false) }
+bounded_pending := pending_writes(bounded_root)
+check(bounded_pending["truncated"] && len(bounded_pending["issues"]) == 1000, "pending intent scan is bounded")
+check(dispatch("doctor",opts(["--state",bounded_root]))["code"] == "scan_incomplete", "incomplete pending scan fails closed")
+for name in list_dir(bounded_root+"/locks") { delete_file(bounded_root+"/locks/"+name) }
+for dir in ["records","history","locks"] { os_rmdir(bounded_root+"/"+dir) }
+delete_file(bounded_root+"/metadata.json"); os_rmdir(bounded_root)
+print(to_string(passed)+" passed; "+to_string(failed)+" failed")
+if failed > 0 { exit(1) }

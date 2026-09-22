@@ -1,8 +1,8 @@
 from src.args import parse_args
-from src.common import get, has, canonical_json, parse_object, safe_id, valid_timestamp, find_sensitive_key, bounded_int, envelope
+from src.common import get, has, canonical_json, parse_object, safe_id, valid_timestamp, find_sensitive_key, bounded_int, envelope, utf8_size
 from src.profile import profile
 from src.domain import record_type, id_prefix, validate_command
-from src.storage import initialize, save_new, load_record, list_records, validate_state_path, is_symlink
+from src.storage import initialize, save_new, load_record, list_records, validate_state_path, is_symlink, recover_record, pending_writes
 
 func flag(parsed, name, fallback) {
     if has_key(parsed["flags"], name) == 1 { return parsed["flags"][name] }
@@ -125,9 +125,10 @@ func export_result(value, parsed, p) {
     if is_symlink(output) { return {"ok": false, "code": "unsafe_output", "error": "output symlinks are not allowed"} }
     if file_exists(output) && flag(parsed, "force", false) != true { return {"ok": false, "code": "output_exists", "error": "output exists; use --force only for intentional safe replacement"} }
     rendered := to_json_pretty(envelope(true, value, null, null, p["version"], p["contract_version"])) + "\n"
-    if len(rendered) > 8388608 { return {"ok": false, "code": "output_too_large", "error": "output exceeds 8 MiB"} }
+    rendered_bytes := utf8_size(rendered)
+    if rendered_bytes > 8388608 { return {"ok": false, "code": "output_too_large", "error": "output exceeds 8 MiB"} }
     try { write_file_atomic(output, rendered, flag(parsed, "force", false) == true) } except error { return {"ok": false, "code": "write_failed", "error": "atomic export write failed"} }
-    return {"ok": true, "value": {"output": output, "bytes": len(rendered), "sha256": sha256(rendered)}}
+    return {"ok": true, "value": {"output": output, "bytes": rendered_bytes, "sha256": sha256(rendered)}}
 }
 
 export func dispatch(command, parsed) {
@@ -136,16 +137,20 @@ export func dispatch(command, parsed) {
     config_result := load_config(flag(parsed, "config", "")); if !config_result["ok"] { return config_result }; config := config_result["value"]
     state := setting(parsed, config, "state", p["default_state"])
     if command == "init" { return initialize(state, {"schema_version": "1.0.0", "tool": p["slug"], "tool_version": p["version"], "contract_version": p["contract_version"], "created_at": now_utc()}) }
+    if command == "recover" { return recover_record(state, flag(parsed, "id", ""), flag(parsed, "dry-run", false)) }
     if command == "version" { return {"ok": true, "value": {"tool": p["slug"], "version": p["version"], "contract_version": p["contract_version"], "supported_record_versions": get(p, "record_versions", [p["version"]]), "minimum_kujo": "1.0.1"}} }
     if command == "doctor" {
         state_error := validate_state_path(state); listing := {"records": [], "warnings": [], "truncated": false}
         if state_error == "" { listing = list_records(state, "", "", 1000) }
-        healthy := state_error == "" && len(listing["warnings"]) == 0 && !listing["truncated"]
+        pending := pending_writes(state)
+        healthy := len(pending["issues"]) == 0 && !pending["truncated"] && state_error == "" && len(listing["warnings"]) == 0 && !listing["truncated"]
         mut code := null; mut error := null
         if state_error != "" { code = "unsafe_state"; error = state_error }
         if state_error == "" && len(listing["warnings"]) > 0 { code = "corrupt_state"; error = "one or more records are unreadable" }
         if listing["truncated"] && code == null { code = "scan_incomplete"; error = "doctor scan limit reached; inspect paginated records" }
-        return {"ok": healthy, "code": code, "error": error, "value": {"healthy": healthy, "tool": p["slug"], "version": p["version"], "minimum_kujo": "1.0.1", "state": state, "record_count": len(listing["records"]), "truncated": listing["truncated"], "corrupt_records": listing["warnings"], "limits": {"input_bytes": 1048576, "record_bytes": 1048576, "artifact_bytes": 67108864, "list_records": 1000}, "limitations": p["limitations"]}}
+        if len(pending["issues"]) > 0 { code = "write_incomplete"; error = "one or more write intents need recovery" }
+        if pending["truncated"] { code = "scan_incomplete"; error = "write intent scan limit reached" }
+        return {"ok": healthy, "code": code, "error": error, "value": {"healthy": healthy, "tool": p["slug"], "version": p["version"], "minimum_kujo": "1.0.1", "state": state, "record_count": len(listing["records"]), "truncated": listing["truncated"], "pending_writes": pending, "corrupt_records": listing["warnings"], "limits": {"input_bytes": 1048576, "record_bytes": 1048576, "artifact_bytes": 67108864, "list_records": 1000}, "limitations": p["limitations"]}}
     }
     if has(p["show_commands"], command) {
         id := flag(parsed, "id", ""); if id == "" { return {"ok": false, "code": "id_required", "error": "show requires --id"} }
@@ -172,11 +177,14 @@ export func dispatch(command, parsed) {
         if id != "" { loaded := load_record(state, id); if !loaded["ok"] { return loaded }; checked := validate_record(loaded["value"], p); if !checked["ok"] { return checked }; return {"ok": true, "value": {"valid": true, "id": id, "checksum": loaded["checksum"]}} }
         listing := list_records(state, "", "", 1000); mut invalid := []
         for record in listing["records"] { checked := validate_record(record, p); if !checked["ok"] { invalid = push(invalid, {"id": record["id"], "code": checked["code"], "error": checked["error"]}) } }
-        valid := len(invalid) == 0 && len(listing["warnings"]) == 0 && !listing["truncated"]
+        pending := pending_writes(state)
+        valid := len(pending["issues"]) == 0 && !pending["truncated"] && len(invalid) == 0 && len(listing["warnings"]) == 0 && !listing["truncated"]
         mut code := null; mut error := null
         if !valid { code = "validation_failed"; error = "one or more records failed validation" }
         if listing["truncated"] && len(invalid) == 0 && len(listing["warnings"]) == 0 { code = "scan_incomplete"; error = "validation scan limit reached; validate remaining records by id" }
-        return {"ok": valid, "code": code, "error": error, "value": {"valid": valid, "checked": len(listing["records"]), "invalid": invalid, "storage_warnings": listing["warnings"], "truncated": listing["truncated"]}}
+        if len(pending["issues"]) > 0 { code = "write_incomplete"; error = "one or more write intents need recovery" }
+        if pending["truncated"] { code = "scan_incomplete"; error = "write intent scan limit reached" }
+        return {"ok": valid, "code": code, "error": error, "value": {"valid": valid, "checked": len(listing["records"]), "invalid": invalid, "pending_writes": pending, "storage_warnings": listing["warnings"], "truncated": listing["truncated"]}}
     }
     if has(p["export_commands"], command) {
         limit_result := bounded_int(setting(parsed, config, "limit", 1000), 1000, 1, 1000); if !limit_result["ok"] { return limit_result }

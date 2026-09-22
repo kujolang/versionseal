@@ -89,3 +89,14 @@ export func bounded_int(value, fallback, minimum, maximum) {
 export func envelope(ok, data, error, code, version, contract) {
     return {"ok": ok, "data": data, "error": error, "error_code": code, "tool_version": version, "contract_version": contract}
 }
+
+// Kujo 1.0.1 len(text) counts Unicode scalars, not encoded file bytes. Its
+// standard base64 encoder provides an exact byte count without a per-character
+// Kujo loop; byte_length is unavailable in the minimum supported runtime.
+export func utf8_size(text) {
+    utf8_encoded := encode_base64(text)
+    utf8_padding := 0
+    if ends_with(utf8_encoded, "==") { utf8_padding = 2 }
+    else if ends_with(utf8_encoded, "=") { utf8_padding = 1 }
+    return to_int(len(utf8_encoded) / 4) * 3 - utf8_padding
+}
