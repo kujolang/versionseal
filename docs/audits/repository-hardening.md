@@ -125,3 +125,7 @@ Benchmark commands (replace `$REPO` with this absolute checkout and `$KUJO` with
 ```
 
 No timing thresholds, remote CI pass, hosted vulnerability certification, or minimum-runtime execution beyond the local tested binary is implied.
+
+## Follow-up
+
+The [recovery and portability follow-up](recovery-followup.md) implements interrupted-write recovery, correct UTF-8 byte limits, and broader cross-platform verification. The limits above describe the original audit checkpoint; consult the follow-up for current recovery behavior and remaining runtime boundaries.
