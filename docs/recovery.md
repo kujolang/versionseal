@@ -46,7 +46,7 @@ The record and event are still two filesystem publications. External programs th
 
 ## Compatibility and operation
 
-- Existing valid 0.1.0 and 0.2.0 records remain readable and verifiable without a journal.
+- New records carry tool version 0.3.0. Existing valid 0.1.0 and 0.2.0 records remain readable and verifiable without a journal.
 - Upgrade all writers before using recovery; do not mix older rollback-capable writers with the new protocol.
 - UTF-8 byte limits now match file sizes, including non-ASCII actor names and metadata. Previously accepted oversized Unicode records that could not be loaded are rejected before locking.
 - Kujo 1.5.0 or newer is required. It includes the interpreter lexical-scope fix and bounded directory paging. The UTF-8 size helper remains compatible and unchanged.

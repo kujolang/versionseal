@@ -1,5 +1,5 @@
 export func profile(){return {
-"name":"VersionSeal","slug":"versionseal","version":"0.2.0","record_versions":["0.1.0","0.2.0"],"contract_version":"1.0.0","description":"Exact-version human approval records and verification.","default_state":".versionseal",
+"name":"VersionSeal","slug":"versionseal","version":"0.3.0","record_versions":["0.1.0","0.2.0","0.3.0"],"contract_version":"1.0.0","description":"Exact-version human approval records and verification.","default_state":".versionseal",
 "commands":["init","recover","request","approve","reject","request-changes","revoke","expire","inspect","show","list","history","verify","validate","export","doctor","version"],
 "show_commands":["inspect","show"],"list_commands":["list","history"],"list_kinds":{},"validate_commands":["verify","validate"],"export_commands":["export"],"diff_commands":[],
 "actor_fields":{"approve":"human_actor","reject":"human_actor","request-changes":"human_actor","revoke":"human_actor","expire":"human_actor"},

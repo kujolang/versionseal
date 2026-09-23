@@ -1,6 +1,6 @@
 # VersionSeal
 
-[![Version](https://img.shields.io/badge/version-0.2.0-black)](VERSION)
+[![Version](https://img.shields.io/badge/version-0.3.0-black)](VERSION)
 [![License](https://img.shields.io/badge/license-MIT-lightgrey)](LICENSE)
 [![built with Kujo](https://img.shields.io/badge/built%20with-Kujo-white.svg)](https://github.com/kujolang/kujo)
 [![CI](https://github.com/kujolang/versionseal/actions/workflows/validate.yml/badge.svg)](https://github.com/kujolang/versionseal/actions/workflows/validate.yml)
@@ -9,9 +9,13 @@ VersionSeal is a local-first Kujo tool for exact-version human approvals, explic
 
 ## Production capabilities
 
-VersionSeal provides immutable records, append-only audit events, atomic writes, exclusive per-record locks, bounded inputs and queries, opt-in RSA/HMAC verification library adapters, offline public-key fixtures, quorum and separation-of-duties policy evaluation, injected-clock expiry, conflict-aware replication with revocation precedence, and a three-platform contention gate. Optional external capabilities fail honestly when no adapter is configured. It does not claim hosted identity.
+VersionSeal provides immutable records, append-only audit events, atomic writes, exclusive per-record locks, bounded inputs and queries, opt-in RSA/HMAC verification library adapters, offline public-key fixtures, quorum and separation-of-duties policy evaluation, injected-clock expiry, conflict-aware replication with revocation precedence, and full three-platform validation gates. Optional external capabilities fail honestly when no adapter is configured. It does not claim hosted identity.
 
 See the [production review](docs/PRODUCTION_READINESS_REVIEW.md) and completed [hardening worklist](docs/NEXT_SESSION.md).
+
+## Version 0.3.0
+
+Adds interrupted-write recovery, stronger immutable storage and validation, and bounded directory-name paging. Requires Kujo 1.5.0 or newer. Existing 0.1.0 and 0.2.0 records remain supported; upgrade all writers before using recovery. See the [changelog](CHANGELOG.md) and [recovery guide](docs/recovery.md).
 
 ## Quick install
 
