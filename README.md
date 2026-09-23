@@ -63,3 +63,7 @@ The gate checks the entrypoint, every Kujo suite, JSON artifacts, CLI smoke path
 See [audit evidence](docs/audits/repository-hardening.md) for verification scope, measurements, and remaining limits. Query pages expose `next_after`; incomplete whole-state scans fail closed.
 
 Interrupted writes can be inspected with `recover --id ID --dry-run` and completed with `recover --id ID`. See [recovery and ownership rules](docs/recovery.md); recovery never steals a writer lock. Full validation now runs on Linux, macOS, and Windows in CI.
+
+### Runtime requirement
+
+Kujo **1.5.0 or newer** is required for bounded directory-name pages and the upstream interpreter lexical-scope fix. CI pins the 1.5.0 source commit `cc2d7dbb59a8dc05f00d629e100932f56f4062f6`. Set `KUJO_BIN` to override the installed runtime; validation and the launcher otherwise prefer `kujo` on PATH. Record, history, and configuration formats remain unchanged.

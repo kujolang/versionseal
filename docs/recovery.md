@@ -49,5 +49,5 @@ The record and event are still two filesystem publications. External programs th
 - Existing valid 0.1.0 and 0.2.0 records remain readable and verifiable without a journal.
 - Upgrade all writers before using recovery; do not mix older rollback-capable writers with the new protocol.
 - UTF-8 byte limits now match file sizes, including non-ASCII actor names and metadata. Previously accepted oversized Unicode records that could not be loaded are rejected before locking.
-- The minimum runtime remains unchanged. The compatible UTF-8 size helper uses the existing base64 primitive because minimum-runtime `len(text)` counts characters and has no `byte_length` primitive.
-- Queries still materialize directory names via the pinned runtime. Removing that allocation safely requires a compatible runtime iterator or an explicit future runtime upgrade; no new state index or filesystem layout is introduced here.
+- Kujo 1.5.0 or newer is required. It includes the interpreter lexical-scope fix and bounded directory paging. The UTF-8 size helper remains compatible and unchanged.
+- Queries retain at most 1,003 directory names in the runtime selection heap (1,002 returned); pending-write scans retain at most 1,002 (1,001 returned). Directory enumeration remains O(N), and pages are not a snapshot across concurrent changes. No state index or filesystem layout migration is needed.

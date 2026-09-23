@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-KUJO_RUNTIME="${KUJO_BIN:-$ROOT/../kujo/target/release/kujo}"
+KUJO_RUNTIME="${KUJO_BIN:-$(command -v kujo || true)}"
+if [[ -z "$KUJO_RUNTIME" ]]; then KUJO_RUNTIME="$ROOT/../kujo/target/release/kujo"; fi
 if [[ ! -x "$KUJO_RUNTIME" && -x "$KUJO_RUNTIME.exe" ]]; then KUJO_RUNTIME="$KUJO_RUNTIME.exe"; fi
 STATE="$(mktemp -d)/state"
 trap 'wait; find "${STATE%/state}" -depth -delete' EXIT

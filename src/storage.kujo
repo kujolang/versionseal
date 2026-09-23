@@ -142,7 +142,8 @@ export func pending_writes(state) {
     pending_dir := locks_dir(state)
     if is_symlink(pending_dir) || (file_exists(pending_dir) && !path_is_dir(pending_dir)) { return {"issues": [{"code": "unsafe_state", "error": "locks must be a regular directory"}], "completed": 0, "truncated": false} }
     if !path_is_dir(pending_dir) { return {"issues": pending_issues, "completed": 0, "truncated": false} }
-    for pending_name in sort(list_dir(pending_dir)) {
+    pending_page := list_dir_page(pending_dir, "", 1001, ".lock")
+    for pending_name in pending_page["entries"] {
         if ends_with(pending_name, ".lock") {
             if pending_scanned >= 1000 { return {"issues": pending_issues, "completed": pending_completed, "truncated": true} }
             pending_id := substring(pending_name, 0, len(pending_name) - 5)
@@ -154,7 +155,7 @@ export func pending_writes(state) {
             pending_scanned = pending_scanned + 1
         }
     }
-    return {"issues": pending_issues, "completed": pending_completed, "truncated": false}
+    return {"issues": pending_issues, "completed": pending_completed, "truncated": pending_page["truncated"]}
 }
 
 export func save_new(state, record) {
@@ -211,7 +212,11 @@ export func list_records(state, kind, after, limit) {
     mut scanned := 0; mut bytes := 0; mut next_after := after
     state_error := validate_state_path(state); if state_error != "" { return {"records": records, "warnings": [{"id": "", "code": "unsafe_state", "error": state_error}], "truncated": false} }
     dir := records_dir(state); if is_symlink(dir) || (file_exists(dir) && !path_is_dir(dir)) { return {"records": records, "warnings": [{"id": "", "code": "unsafe_state", "error": "records path must be a regular directory"}], "truncated": false} }; if !path_is_dir(dir) { return {"records": records, "warnings": warnings, "truncated": false} }
-    for name in sort(list_dir(dir)) {
+    // Keep one lookahead beyond the scan budget and one possible cursor file.
+    // Use the ID (not ID + suffix) to retain existing prefix-ID ordering.
+    names_page := list_dir_page(dir, after, 1002, ".json")
+    truncated = names_page["truncated"]
+    for name in names_page["entries"] {
         if ends_with(name, ".json") {
             id := substring(name, 0, len(name) - 5)
             if after == "" || id > after {

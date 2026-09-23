@@ -1,0 +1,39 @@
+from tests.support import test_root
+from src.storage import initialize, list_records, pending_writes
+mut passed := 0
+mut failed := 0
+func check(ok, label) { if ok { passed = passed + 1 } else { failed = failed + 1; eprint("FAIL: " + label) } }
+func scope_inner() { path := "nested"; return path }
+func scope_outer() { path := "caller"; scope_inner(); return path }
+check(scope_outer() == "caller", "runtime isolates caller locals")
+root := test_root("versionseal-directory")
+check(initialize(root, {"tool":"versionseal","contract_version":"1.0.0"})["ok"], "initialize")
+for index in range(0, 5000) { write_file(root+"/records/reject-"+to_string(10000+index)+".json", "{", false) }
+// Runtime receipts make the retained-name budget directly observable.
+native := list_dir_page(root+"/records", "", 1002, ".json")
+check(native["examined_entries"] == 5000 && native["buffered_entries"] == 1003, "bounded retained names across 5000 entries")
+check(len(list_dir(root+"/records")) == 5000, "legacy materialization baseline")
+mut cursor := ""
+mut seen := 0
+for page_index in range(0, 5) {
+    page := list_records(root, "", cursor, 1000)
+    check(page["scanned"] == 1000 && len(page["warnings"]) == 1000, "candidate bound")
+    check(page["truncated"] == (page_index < 4), "exact boundary lookahead")
+    check(page["next_after"] == "reject-"+to_string(10999+page_index*1000), "cursor makes complete progress")
+    cursor = page["next_after"]; seen = seen + page["scanned"]
+}
+check(seen == 5000 && len(list_records(root,"",cursor,1000)["warnings"]) == 0, "all names covered without duplication")
+for name in list_dir(root+"/records") { delete_file(root+"/records/"+name) }
+// A filename cursor includes its own .json file; it must not consume scan budget.
+for id in ["reject-a", "reject-a-child", "reject-b"] { write_file(root+"/records/"+id+".json", "{", false) }
+prefix := list_records(root,"","reject-a",1000)
+check(prefix["scanned"] == 2 && prefix["warnings"][0]["id"] == "reject-a-child" && prefix["warnings"][1]["id"] == "reject-b", "prefix IDs preserve existing exclusive-ID filtering")
+for index in range(0,1000) { write_file(root+"/locks/reject-"+to_string(10000+index)+".lock", "locked\n", false) }
+exact := pending_writes(root)
+check(!exact["truncated"] && len(exact["issues"]) == 1000, "exact pending bound is complete")
+write_file(root+"/locks/reject-extra.lock","locked\n",false)
+check(pending_writes(root)["truncated"], "one extra pending lock fails closed")
+for directory in ["records","history","locks"] { for name in list_dir(root+"/"+directory) { delete_file(root+"/"+directory+"/"+name) }; os_rmdir(root+"/"+directory) }
+delete_file(root+"/metadata.json"); os_rmdir(root)
+print(to_string(passed)+" passed; "+to_string(failed)+" failed")
+if failed > 0 { exit(1) }
