@@ -15,7 +15,7 @@ See the [production review](docs/PRODUCTION_READINESS_REVIEW.md) and completed [
 
 ## Quick install
 
-Requires Kujo 1.0.1 or newer.
+Requires Kujo 1.5.0 or newer (see [runtime requirements](#runtime-requirement)).
 
 ```bash
 git clone https://github.com/kujolang/versionseal.git

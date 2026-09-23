@@ -87,3 +87,7 @@ Verification against the current debug build:
 VersionSeal keeps its descriptive helper-local names for compatibility with older supported runtimes. Removing that compatibility protection would not improve correctness. The old SignalBox report and prior memory are historical; this verified resolution supersedes their unresolved-runtime status. No new unresolved finding was created.
 
 Remaining work is limited to the documented legacy-lock/operator, two-file visibility, power-loss/network-filesystem, and directory-enumeration boundaries above. No demonstrated VersionSeal defect remains from RF-04. Adopt a runtime build containing the upstream fix when updating deployments; the old release binary used for the original report does not acquire fixes merely because source is updated.
+
+## Runtime adoption update
+
+The [2026-09-23 runtime and bounded-scan follow-up](runtime-upgrade.md) supersedes the unchanged-minimum-runtime and full directory materialization limits above. It adopts Kujo 1.5.0 explicitly, installs the fixed runtime on this host, and records final verification and remaining durability boundaries.
