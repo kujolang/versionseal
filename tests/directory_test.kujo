@@ -1,4 +1,6 @@
 from tests.support import test_root
+from src.core import dispatch
+from src.args import parse_args
 from src.storage import initialize, list_records, pending_writes
 mut passed := 0
 mut failed := 0
@@ -8,6 +10,7 @@ func scope_outer() { path := "caller"; scope_inner(); return path }
 check(scope_outer() == "caller", "runtime isolates caller locals")
 root := test_root("versionseal-directory")
 check(initialize(root, {"tool":"versionseal","contract_version":"1.0.0"})["ok"], "initialize")
+check(dispatch("doctor",parse_args(["--state",root],["json","dry-run","force"]))["value"]["minimum_kujo"] == "1.5.0", "doctor declares required runtime")
 for index in range(0, 5000) { write_file(root+"/records/reject-"+to_string(10000+index)+".json", "{", false) }
 // Runtime receipts make the retained-name budget directly observable.
 native := list_dir_page(root+"/records", "", 1002, ".json")
