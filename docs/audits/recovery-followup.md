@@ -17,7 +17,7 @@ The record, history, IDs, schema/contract/tool versions, existing command signat
 | RF-01 | P1 | Separate record/history atomic writes could leave an unexplained partial pair after process death | Exact-byte write intent, idempotent recovery, no replacement, pending-write validation | Implemented and tested |
 | RF-02 | P1 | `len("Zoë💾")` counts characters; file size counts 8 UTF-8 bytes. Unicode recovery initially failed exact-size checks; an oversized Unicode record could be accepted then rejected on load | Compatible UTF-8 size helper for writes/exports; actual file-size receipts on load; tests for replay, export, and pre-lock bounds | Fixed |
 | RF-03 | P2 | Prior cross-platform jobs exercised only contention; the earlier run actually succeeded on all three OSes | Full validation in the existing OS matrix; isolated relative scratch paths, cleanup, `.exe` resolution, real native symlink assertions, stable source/fixture line endings | Expanded; hosted results below |
-| RF-04 | P1, cross-repo | Minimal scope reproducer prints `caller` in VM execution but `nested` with `--interpreter`; imported helpers can change caller-local destinations | Distinct transaction-helper locals and recovery tests in both modes; reproducible Kujo follow-up | Locally mitigated; runtime issue remains |
+| RF-04 | P1, cross-repo | Minimal scope reproducer prints `caller` in VM execution but `nested` with `--interpreter`; imported helpers can change caller-local destinations | Distinct transaction-helper locals and recovery tests in both modes; reproducible Kujo follow-up | Fixed upstream in `a8f50ab`; verified 2026-09-23 (see below) |
 
 Implementation files: `src/storage.kujo`, `src/core.kujo`, `src/profile.kujo`, `src/common.kujo`; regression files: `tests/recovery_test.kujo`, `tests/recovery_fixture.kujo`, `tests/support.kujo` and existing filesystem suites. Existing test assertions were preserved; native symlink fixture creation is now asserted rather than silently skipped. Gates and portability changes are in `scripts/validate.sh`, `scripts/contention_benchmark.sh`, `.github/workflows/validate.yml`, and `.gitattributes`.
 
@@ -71,3 +71,19 @@ diff -r .tmp/compatibility-old/history .tmp/compatibility-new/history
 ```
 
 The scope reproducer was deliberately run in both modes to preserve the discrepant outputs; it is evidence for an upstream issue, not a passing VersionSeal test. Full gates and compatibility comparisons above passed locally; hosted results are separately attributed to their exact revision.
+
+## Upstream scope resolution — 2026-09-23
+
+The earlier RF-04 status was based on the older local release binary, not the current upstream source. Kujo commit `a8f50ab50843b86cabc28da88dbb351a154b97ad` (Isolate top-level interpreter calls from caller-local scopes) is already contained in fetched `origin/main`, verified at `58c087b5d7af2a05d5d9fd2ad26a5a533044c5f6`. It suspends unrelated caller scopes during top-level calls and restores them afterward, preserving globals and captured closures. No additional Kujo source modification was needed.
+
+Verification against the current debug build:
+
+- `cargo test --test vm_interpreter_parity_surfaces` in Kujo: **115 passed**, including caller-local reads/writes, direct/indirect/pipe calls, lexical capture, and global immutability.
+- `target/debug/kujo run ../versionseal/docs/audits/runtime-scope-repro.kujo`, repeated with `--interpreter`: **caller** in both modes.
+- `KUJO_BIN=/Users/robertdevore/2026/Kujolang/kujo-repos/kujo/target/debug/kujo bash scripts/validate.sh`: **148 assertions and both contention gates passed** locally on macOS. This is additional validation, not a new three-platform hosted claim.
+- Existing release runtime: `../kujo/target/release/kujo run tests/test.kujo`: **16 passed**.
+- `git diff --check`: passed.
+
+VersionSeal keeps its descriptive helper-local names for compatibility with older supported runtimes. Removing that compatibility protection would not improve correctness. The old SignalBox report and prior memory are historical; this verified resolution supersedes their unresolved-runtime status. No new unresolved finding was created.
+
+Remaining work is limited to the documented legacy-lock/operator, two-file visibility, power-loss/network-filesystem, and directory-enumeration boundaries above. No demonstrated VersionSeal defect remains from RF-04. Adopt a runtime build containing the upstream fix when updating deployments; the old release binary used for the original report does not acquire fixes merely because source is updated.
