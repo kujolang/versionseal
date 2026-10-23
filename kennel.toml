@@ -1,0 +1,24 @@
+[package]
+name = "versionseal"
+version = "0.3.0"
+description = "Kujo-native exact-version human approval and checksum verification"
+license = "MIT"
+authors = ["Kujolang <contact@kujolang.ai>"]
+repository = "https://github.com/kujolang/versionseal"
+documentation = "https://github.com/kujolang/versionseal#readme"
+readme = "README.md"
+
+[package.exports]
+cli = "versionseal.kujo"
+
+[kujo]
+minimum_version = "1.5.0"
+entry = "versionseal.kujo"
+sources = ["."]
+includes = ["README.md", "LICENSE", "CHANGELOG.md", "SECURITY.md", "VERSION", "kujo.toml", "bin", "docs", "examples", "fixtures", "schemas", "scripts", "tests"]
+excludes = [".git", ".versionseal", ".kennel_tmp", "kennel_packages", "node_modules", "target", "dist", "build", "output", "__pycache__", ".runtime", ".loop-engineering"]
+
+[dependencies]
+
+[scripts]
+verify = "bash scripts/validate.sh"
